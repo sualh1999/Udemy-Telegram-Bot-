@@ -34,7 +34,7 @@ try:
     client = MongoClient(MONGODB_URL)
     db = client.get_database('udemy')
     user_collection = db.user_data
-    bot.send_message(ADMIN_USER_ID, "✅ Bot started and successfully connected to the database.")
+    bot.send_message(ADMIN_USER_ID, "✅ Bot started and successfully connected to the database. v1")
 except Exception as e:
     print(f"Error connecting to MongoDB: {e}")
     bot.send_message(ADMIN_USER_ID, f"❌ Bot failed to start. DB connection error: {e}")
@@ -455,9 +455,15 @@ def notify_interested_users(course_details):
     print(f"Finding users for course: {title}")
 
     # Find users whose 'words' array has at least one element that matches a word in the title
-    title_words = set(word.lower() for word in title.split())
+    # Split title into words
+    title_words = title.split()
+    
+    # Build case-insensitive regex list
+    regex_patterns = [ {"$regex": f"^{word}$", "$options": "i"} for word in title_words ]
+    
+    # Query users whose 'words' array has at least one match (case-insensitive)
     interested_users_cursor = user_collection.find({
-        "words": {"$elemMatch": {"$in": list(title_words)}}
+        "words": {"$elemMatch": {"$in": regex_patterns}}
     })
     
     interested_users = list(interested_users_cursor)
@@ -535,11 +541,12 @@ def run_web_scraper():
     """The main loop for the web scraping process."""
     while True:
         try:
-            print("-" * 30)
+            bot.send_message(ADMIN_USER_ID, "-" * 30)
+            bot.send_message(ADMIN_USER_ID, "scrapping started...")
             new_course_links = fetch_course_list()
             
             if not new_course_links:
-                print("No new courses found. Waiting 60 seconds.")
+                bot.send_message(ADMIN_USER_ID, "No new courses found. Waiting 60 seconds.")
                 time.sleep(60)
                 continue
 
@@ -553,7 +560,7 @@ def run_web_scraper():
                     save_last_scraped_link(link) # Save after successful processing
                 time.sleep(5) # Be respectful to the server
 
-            print("Finished processing new courses batch.")
+            bot.send_message(ADMIN_USER_ID, "Finished processing new courses batch. sleeping 30s")
             time.sleep(30) # Wait before next check
 
         except Exception as e:
@@ -567,7 +574,7 @@ def run_web_scraper():
 # ==============================================================================
 
 if __name__ == "__main__":
-    print("Starting scraper thread...")
+    bot.send_message(ADMIN_USER_ID, "Starting scraper thread...")
     scraper_thread = threading.Thread(target=run_web_scraper, daemon=True)
     scraper_thread.start()
 
