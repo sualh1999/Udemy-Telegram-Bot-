@@ -446,16 +446,16 @@ def parse_course_details(url):
     except (requests.RequestException, AttributeError, TypeError) as e:
         print(f"Error parsing course details for {url}: {e}")
         return None
-
 def notify_interested_users(course_details):
-    """Finds users interested in the course and sends them the details."""
+    """
+    Finds users interested in the course and sends them the details.
+    If a user has received many courses but hasn't rated/joined, it sends a 'locked' version of the course.
+    """
     title = course_details['title']
     print(f"Finding users for course: {title}")
 
-    # Build a regex to find any of the keywords in the title
+    # Find users whose 'words' array has at least one element that matches a word in the title
     title_words = set(word.lower() for word in title.split())
-    
-    # Find users whose 'words' array has at least one element that is in the title
     interested_users_cursor = user_collection.find({
         "words": {"$elemMatch": {"$in": list(title_words)}}
     })
@@ -469,44 +469,56 @@ def notify_interested_users(course_details):
     print(f"Found {len(interested_users)} potentially interested users.")
     bot.send_message(LOG_CHANNEL_ID, f"📢 Course: {title}\nFound {len(interested_users)} interested users.")
 
-    users_to_notify = []
-    users_to_prompt_rating = []
+    users_receiving_notification = []
 
     for user in interested_users:
         user_id = user["_id"]
-        # Double check if any of their words truly match
+        # Double-check for false positives from the database query
         user_words = set(w.lower() for w in user.get("words", []))
         if not title_words.intersection(user_words):
-            continue # False positive from DB query, skip
+            continue
         
-        if user.get('course_count', 0) > 20 and not user.get('rated_the_bot', False):
-            users_to_prompt_rating.append(user_id)
-        else:
-            users_to_notify.append(user_id)
+        users_receiving_notification.append(user_id)
+        
+        # Determine if the course link should be locked for this user
+        is_locked_for_user = user.get('course_count', 0) > 20 and not user.get('rated_the_bot', False)
+        
+        # Send the course notification, passing the locked status
+        send_course_to_user(user_id, course_details, is_locked=is_locked_for_user)
+        time.sleep(0.05) # Rate limit: 20 messages per second
     
-    # Send rating prompts
-    for user_id in users_to_prompt_rating:
-        prompt_for_rating(user_id)
-        time.sleep(0.05) # 20 messages per second limit
+    # Update the course count for everyone who was notified
+    bulk_increment_course_count(users_receiving_notification)
 
-    # Send courses
-    for user_id in users_to_notify:
-        send_course_to_user(user_id, course_details)
-        time.sleep(0.05)
-    
-    # Update course count for users who received the notification
-    bulk_increment_course_count(users_to_notify)
 
-def send_course_to_user(user_id, details):
-    """Formats and sends a single course message to a user."""
+def send_course_to_user(user_id, details, is_locked=False):
+    """
+    Formats and sends a single course message to a user.
+    Displays a locked or unlocked version based on the 'is_locked' flag.
+    """
     caption = (
         f"<b>{details['title']}</b>\n"
         f"▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔\n"
         f"{details['disc']}\n\n"
         f"⏳ <i>Free for the first 500-1000 enrollments only!</i>"
     )
+    
     markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("🎁 Enroll for FREE 🧭", url=details['link']))
+
+    if is_locked:
+        # Append lock message and create the verification keyboard
+        caption += (
+            "\n\n"
+            "🔒 <b>Link Locked:</b> To get the enrollment link for this course, please complete two quick steps below and then click 'Check My Status'."
+        )
+        markup.add(
+            types.InlineKeyboardButton("1️⃣ Join Channel", url="https://t.me/huam3_info"),
+            types.InlineKeyboardButton("2️⃣ Rate 5 ⭐", url="https://t.me/BotsArchive/2874")
+        )
+        markup.add(types.InlineKeyboardButton("✅ Check My Status", callback_data="action:check_rating"))
+    else:
+        # Create the standard enroll button
+        markup.add(types.InlineKeyboardButton("🎁 Enroll for FREE 🧭", url=details['link']))
     
     try:
         bot.send_photo(user_id, details['imglink'], caption=caption, reply_markup=markup)
