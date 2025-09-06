@@ -31,7 +31,7 @@ LAST_LINK_FILE = 'store.json'
 # --- Initialize Bot and Database ---
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode='HTML')
 try:
-    client = MongoClient(MONGO_URI)
+    client = MongoClient(MONGODB_URL)
     db = client.get_database('udemy')
     user_collection = db.user_data
     bot.send_message(ADMIN_USER_ID, "✅ Bot started and successfully connected to the database.")
