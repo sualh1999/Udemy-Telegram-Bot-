@@ -451,20 +451,25 @@ def notify_interested_users(course_details):
     Finds users interested in the course and sends them the details.
     If a user has received many courses but hasn't rated/joined, it sends a 'locked' version of the course.
     """
+    import re
     title = course_details['title']
     print(f"Finding users for course: {title}")
 
     # Find users whose 'words' array has at least one element that matches a word in the title
     # Split title into words
-    title_words = title.split()
-    
-    # Build case-insensitive regex list
-    regex_patterns = [ {"$regex": f"^{word}$", "$options": "i"} for word in title_words ]
-    
-    # Query users whose 'words' array has at least one match (case-insensitive)
+    title_words = set(word.lower() for word in title.split())
+
+    # Build regex queries for each word
+    regex_conditions = [
+        {"words": {"$regex": f"^{re.escape(word)}$", "$options": "i"}}
+        for word in title_words
+    ]
+
+    # Query: users whose words match any of the title words (case-insensitive)
     interested_users_cursor = user_collection.find({
-        "words": {"$elemMatch": {"$in": regex_patterns}}
+        "$or": regex_conditions
     })
+
     
     interested_users = list(interested_users_cursor)
     
